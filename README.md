@@ -1,4 +1,4 @@
-![github-header-banner](https://s2.loli.net/2026/01/26/u9AHDqhROkngBo2.png)
+<img width="1791" height="690" alt="github-header-banner" src="https://github.com/user-attachments/assets/cbfb5301-9609-4939-929d-e36a98bbb119" />
 
 此skill的实施旨在使用Google AI工具 Antigravity 对PDF扫描本的书籍进行逐页OCR并借由AI能力校正排版，以生成可编辑的Markdown文本文件，方便后续转换处理和做引用摘抄使用。
 
