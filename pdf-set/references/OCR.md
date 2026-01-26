@@ -1,7 +1,8 @@
 CRITICAL: 一旦命令开始执行，你就不能停止，等待命令执行完毕再提醒用户。禁止重复执行任务！
+当用户没有google-genai库时，自动执行 pip install google-genai 安装相关组件
 
 ## 输入/输出
-- 输入：`图片/` 中的图片文件（支持 jpg/jpeg/png/bmp/tif/tiff/webp），按文件名前序号排序。
+- 输入：`images/` 中的图片文件（支持 jpg/jpeg/png/bmp/tif/tiff/webp），按文件名前序号排序。
 - 输入（单文件）：指定单张图片文件路径。
 - 输出：`ocr-result/` 中的单页文件，文件名为「原图序号.md」，一一对应。
   - 单文件输出：默认写入 `ocr-result/`，文件名为「原图文件名.md」，也可指定输出文件路径。
@@ -10,7 +11,7 @@ CRITICAL: 一旦命令开始执行，你就不能停止，等待命令执行完�
 
 - 使用 `scripts/ocr.py` 完成 OCR。
 - 默认按当前工作目录推导路径：
-  - 输入：`<当前目录>/图片/`
+  - 输入：`<当前目录>/images/`
   - 输出：`<当前目录>/ocr-result/`
   - Prompt：`<脚本目录>/ocr_prompt.md`
 - 可选参数：
@@ -40,18 +41,18 @@ python .agent/skills/pdf-set/scripts/ocr.py --base-dir "C:\path\to" --book-name 
 单文件示例：
 
 ```bash
-python .agent/skills/pdf-set/scripts/ocr.py --input-file "C:\path\to\图片\20.jpg"
+python .agent/skills/pdf-set/scripts/ocr.py --input-file "C:\path\to\images\20.jpg"
 ```
 
 ```bash
-python .agent/skills/pdf-set/scripts/ocr.py --input-file "C:\path\to\图片\20.jpg" --output-file "C:\path\to\ocr-result\20.md"
+python .agent/skills/pdf-set/scripts/ocr.py --input-file "C:\path\to\images\20.jpg" --output-file "C:\path\to\ocr-result\20.md"
 ```
 
 自动续处理说明：
-- 若未指定 `--start/--end`，脚本会读取 `<书籍目录>/ocr-result` 中已存在的最大页码，和`<书籍目录>/图片` 中的最大页码，把前者加一作为起始页码，后者作为结束页码，自动续处理剩余图片。`--batch-size` 默认为3，不要动，不要从.fail.md.开始计数。
+- 若未指定 `--start/--end`，脚本会读取 `<书籍目录>/ocr-result` 中已存在的最大页码，和`<书籍目录>/images` 中的最大页码，把前者加一作为起始页码，后者作为结束页码，自动续处理剩余图片。`--batch-size` 默认为3，不要动，不要从.fail.md.开始计数。
 
 ## 阶段 1：确认顺序
-1. 读取 `图片/` 内的文件列表，按文件名前的数字序号排序。
+1. 读取 `images/` 内的文件列表，按文件名前的数字序号排序。
 2. 严格按序号顺序输出对应的 `.md` 文件；不要调整内容。
 
 ## 阶段 2：OCR 输出规则

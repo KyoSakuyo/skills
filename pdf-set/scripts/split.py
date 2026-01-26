@@ -2,8 +2,8 @@ import argparse
 import os
 import re
 
-DEFAULT_INPUT_DIRNAME = '合并结果'
-DEFAULT_INPUT_FILENAME = '0.粗全文.md'
+DEFAULT_INPUT_DIRNAME = 'merge-result'
+DEFAULT_INPUT_FILENAME = '0.rough.md'
 
 def read_single_path(path):
     with open(path, 'r', encoding='utf-8') as f:

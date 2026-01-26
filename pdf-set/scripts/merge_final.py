@@ -2,7 +2,7 @@ import argparse
 import os
 import re
 
-DEFAULT_INPUT_DIRNAME = "排版结果"
+DEFAULT_INPUT_DIRNAME = "typeset-result"
 
 def read_single_path(path):
     with open(path, 'r', encoding='utf-8') as f:

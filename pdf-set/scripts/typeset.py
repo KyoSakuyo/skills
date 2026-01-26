@@ -3,8 +3,8 @@ import argparse
 import os
 import re
 
-DEFAULT_INPUT_DIRNAME = '合并结果'
-DEFAULT_OUTPUT_DIRNAME = '排版结果'
+DEFAULT_INPUT_DIRNAME = 'merge-result'
+DEFAULT_OUTPUT_DIRNAME = 'typeset-result'
 
 def cleanup_text(text):
     """Clean up OCR artifacts like repeated Chinese words/characters and footnote newlines."""
@@ -120,14 +120,18 @@ def process_layout(input_path, output_path, is_index=False):
 def read_file_list(path):
     with open(path, 'r', encoding='utf-8') as f:
         lines = [line.strip() for line in f.readlines()]
-    return [line for line in lines if line]
+    return [line for line in lines if line and line != '0.rough.md']
 
 def match_by_indices(input_dir, indices):
     matched = []
     for index in indices:
         prefix = f"{index}."
         for filename in os.listdir(input_dir):
-            if filename.startswith(prefix) and filename.endswith('.md'):
+            if (
+                filename.startswith(prefix)
+                and filename.endswith('.md')
+                and filename != '0.rough.md'
+            ):
                 matched.append(filename)
                 break
     return matched
@@ -138,10 +142,10 @@ def collect_input_files(input_dir, filenames, files_from, file_indices):
     if file_indices:
         return match_by_indices(input_dir, file_indices)
     if filenames:
-        return filenames
+        return [f for f in filenames if f != '0.rough.md']
     return sorted(
         f for f in os.listdir(input_dir)
-        if f.endswith('.md')
+        if f.endswith('.md') and f != '0.rough.md'
     )
 
 if __name__ == "__main__":

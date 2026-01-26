@@ -406,7 +406,7 @@ def main():
     parser.add_argument(
         "--input-dir",
         default=None,
-        help="Path to input images folder (default: <base-dir>/图片).",
+        help="Path to input images folder (default: <base-dir>/images).",
     )
     parser.add_argument(
         "--input-file",
@@ -481,7 +481,7 @@ def main():
     if args.book_name:
         base_dir = os.path.join(base_dir, args.book_name)
 
-    images_dir = args.input_dir or os.path.join(base_dir, "图片")
+    images_dir = args.input_dir or os.path.join(base_dir, "images")
     if args.input_dir_from:
         input_dir_from = read_single_path(args.input_dir_from)
         if input_dir_from:

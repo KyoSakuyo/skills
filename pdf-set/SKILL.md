@@ -8,6 +8,7 @@ description: OCR-to-markdown pipeline for book/PDF image workflows: split PDF to
 Use the correct subtask file based on the user's request. Each subtask is a standalone procedure; do not mix steps across tasks unless asked.
 
 ## Task Map
+- **Install prerequisites** → read `references/安装前置组件.md`
 - **Split PDF to images** → read `references/分图.md`
 - **OCR from images** → read `references/OCR.md`
 - **OCR failure补漏（对OCR处理失败的内容查漏补缺）** → read `references/OCR查漏补缺.md`

@@ -4,8 +4,8 @@ import os
 import re
 
 DEFAULT_INPUT_DIRNAME = 'ocr-result'
-DEFAULT_OUTPUT_DIRNAME = '合并结果'
-DEFAULT_OUTPUT_FILENAME = '0.粗全文.md'
+DEFAULT_OUTPUT_DIRNAME = 'merge-result'
+DEFAULT_OUTPUT_FILENAME = '0.rough.md'
 
 def read_single_path(path):
     with open(path, 'r', encoding='utf-8') as f:
