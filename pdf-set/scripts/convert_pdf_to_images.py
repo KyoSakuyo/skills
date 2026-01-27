@@ -1,15 +1,20 @@
 import argparse
 import os
 
-from pdf2image import convert_from_path as _convert_from_path
+import pypdfium2 as pdfium
 
 
 def convert(pdf_path, output_dir, dpi=144, start_index=0, image_format="jpg", max_dim=None):
     os.makedirs(output_dir, exist_ok=True)
-    images = _convert_from_path(pdf_path, dpi=dpi)
-    page_count = len(images)
+    pdf = pdfium.PdfDocument(pdf_path)
+    page_count = len(pdf)
+    scale = dpi / 72.0
 
-    for i, image in enumerate(images):
+    for i in range(page_count):
+        page = pdf[i]
+        image = page.render(scale=scale).to_pil()
+        page.close()
+
         if max_dim:
             width, height = image.size
             if width > max_dim or height > max_dim:
@@ -23,6 +28,8 @@ def convert(pdf_path, output_dir, dpi=144, start_index=0, image_format="jpg", ma
         save_format = "JPEG" if image_format.lower() in {"jpg", "jpeg"} else image_format.upper()
         image.save(image_path, format=save_format)
         print(f"Saved page {start_index + i} as {image_path} (size: {image.size})")
+
+    pdf.close()
 
     print(f"Converted {page_count} pages to {image_format} images")
 

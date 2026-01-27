@@ -83,7 +83,7 @@
 
    - 对AI施咒：`导入该工作区内的.agent文件夹内的skill,用pdf-set安装前置组件`
 
-     AI会依次帮你安装后续工作所需安装的两个Python库，分别是[google-genai](https://pypi.org/project/google-genai/)和[pdf2image](https://pypi.org/project/pdf2image/)，如果出了问题，AI会一步步告诉你问题出在哪里并解决。
+     AI会依次帮你安装后续工作所需安装的两个Python库，分别是[google-genai](https://pypi.org/project/google-genai/)和[pypdfium2](https://pypi.org/project/pypdfium2/)，如果出了问题，AI会一步步告诉你问题出在哪里并解决。
 
      ![image-20260126125950131](https://s2.loli.net/2026/01/26/cLVAl8j6qTG34fJ.png)
 
