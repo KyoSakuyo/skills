@@ -18,6 +18,39 @@ def read_single_path(path):
 def get_natural_sort_key(s):
     return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
 
+def _dedupe_headings(merged_text):
+    lines = merged_text.splitlines()
+    seen_titles = set()
+    out_lines = []
+    # Allow leading whitespace before markdown headings from OCR output.
+    heading_re = re.compile(r'^\s*(#{1,6})\s+(.+?)\s*$')
+
+    for line in lines:
+        m = heading_re.match(line)
+        if m:
+            title = m.group(2).strip()
+            if title in seen_titles:
+                # Remove duplicate heading and ensure single blank line separation
+                if out_lines and out_lines[-1].strip() != "":
+                    out_lines.append("")
+                continue
+            seen_titles.add(title)
+        out_lines.append(line)
+
+    # Collapse consecutive blank lines to a single blank line
+    cleaned = []
+    prev_blank = False
+    for line in out_lines:
+        is_blank = (line.strip() == "")
+        if is_blank:
+            if not prev_blank:
+                cleaned.append("")
+            prev_blank = True
+        else:
+            cleaned.append(line)
+            prev_blank = False
+    return "\n".join(cleaned).strip() + "\n"
+
 def merge_ocr_results(input_dir, output_dir, output_file):
     if not os.path.exists(input_dir):
         print(f"Error: Input directory {input_dir} does not exist.")
@@ -39,9 +72,10 @@ def merge_ocr_results(input_dir, output_dir, output_file):
 
     # Join with a single blank line (two newlines)
     merged_content = "\n\n".join(all_content)
+    merged_content = _dedupe_headings(merged_content)
 
     with open(output_file, 'w', encoding='utf-8') as f:
-        f.write(merged_content + "\n")
+        f.write(merged_content)
 
     print(f"Successfully merged {len(md_files)} files into {output_file}")
 

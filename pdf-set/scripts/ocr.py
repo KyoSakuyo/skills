@@ -83,16 +83,22 @@ def countdown_timer(seconds):
     sys.stdout.write("\rWait complete!            \n")
     sys.stdout.flush()
  
-def update_progress(progress):
+def update_progress(completed, total):
     """
-    Displays a simple progress bar in the console.
+    Displays a simple single-line progress bar in the console.
     """
+    if total <= 0:
+        return
     bar_length = 50
+    progress = completed / total
     block = int(round(bar_length * progress))
-    text = f"Progress: [{'#' * block + '-' * (bar_length - block)}] {round(progress * 100, 2)}%"
+    bar = "#" * block + "-" * (bar_length - block)
+    pct = round(progress * 100, 2)
+    status = "OVER" if completed >= total else "RUNNING"
+    text = f"[{completed}/{total}][{bar}][{pct:.2f}%][{status}]"
     sys.stdout.write("\r\033[K" + text)
     sys.stdout.flush()
-    if progress >= 1:
+    if completed >= total:
         sys.stdout.write("\n")
         sys.stdout.flush()
  
@@ -164,11 +170,35 @@ def read_single_path(path):
 
 
 def find_max_index(output_dir):
+    """
+    Find the last continuous numeric index starting from 0 in output_dir.
+    Returns -1 if 0 is missing or directory doesn't exist.
+    """
     if not os.path.isdir(output_dir):
         return -1
-    max_idx = -1
+    nums = set()
     for name in os.listdir(output_dir):
         if name.endswith(".md"):
+            stem = os.path.splitext(name)[0]
+            if stem.isdigit():
+                nums.add(int(stem))
+    idx = 0
+    while idx in nums:
+        idx += 1
+    return idx - 1
+
+
+def find_max_image_index(images_dir):
+    """
+    Find the maximum numeric index from image filenames in images_dir.
+    Returns -1 if no numeric image files are found.
+    """
+    if not os.path.isdir(images_dir):
+        return -1
+    exts = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp")
+    max_idx = -1
+    for name in os.listdir(images_dir):
+        if name.lower().endswith(exts):
             stem = os.path.splitext(name)[0]
             if stem.isdigit():
                 max_idx = max(max_idx, int(stem))
@@ -190,12 +220,9 @@ def extract_text_from_gemini_api(image_path, page_num, prompt_text):
     Added detailed logging and error information.
     """
     prohibited_sentinel = "__PROHIBITED_CONTENT__"
-    try:
-        print(f"\nProcessing page {page_num}:")
-
-        for attempt in range(1, 6):
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] Encoding image for API request...")
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] Sending request to API... (attempt {attempt}/5)")
+    last_error_message = None
+    for attempt in range(1, 6):
+        try:
             image_bytes = _read_image_bytes(image_path)
             content = types.Content(
                 role="user",
@@ -209,57 +236,38 @@ def extract_text_from_gemini_api(image_path, page_num, prompt_text):
                 contents=[content],
             )
 
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] Response received from API")
-
             finish_reason = _get_finish_reason(response)
             if finish_reason and "PROHIBITED_CONTENT" in finish_reason.upper():
-                print("Blocked by model safety policy (PROHIBITED_CONTENT).")
                 return prohibited_sentinel
             if finish_reason and "RECITATION" in finish_reason.upper():
-                print("Blocked by model policy (RECITATION).")
                 return prohibited_sentinel
 
             content_text = _extract_text_from_response(response)
             if content_text:
-                print("Successfully extracted text from image")
                 return content_text
 
-            print("Warning: No text content found in API response")
-            if attempt < 5:
-                delay = 2.0
-                print(f"Waiting {delay:.2f}s before retry...")
-                time.sleep(delay)
+        except Exception as e:
+            error_message = f"\nError processing page {page_num}:\n"
+            error_message += f"Error Type: {type(e).__name__}\n"
+            error_message += f"Error Message: {str(e)}\n"
 
-        print("No content after 5 attempts. Please intervene.")
-        return None
- 
-    except Exception as e:
-        error_message = f"\nError processing page {page_num}:\n"
-        error_message += f"Error Type: {type(e).__name__}\n"
-        error_message += f"Error Message: {str(e)}\n"
- 
-        if hasattr(e, 'status_code'):
-            error_message += f"Status Code: {e.status_code}\n"
-        if hasattr(e, 'response'):
-            error_message += f"Response: {e.response}\n"
-        if hasattr(e, 'details'):
-            error_message += f"Details: {e.details}\n"
- 
-        print(error_message)
-        error_text = error_message.lower()
-        stop_markers = (
-            "503",
-            "429",
-            "no capacity",
-            "model_capacity_exhausted",
-            "unavailable",
-            "all accounts are currently limited",
-            "all accounts exhausted",
-            "token error",
-        )
-        if any(marker in error_text for marker in stop_markers):
-            raise RuntimeError(error_message) from e
-        return f"[ERROR ON PAGE {page_num}]: {error_message}"
+            if hasattr(e, 'status_code'):
+                error_message += f"Status Code: {e.status_code}\n"
+            if hasattr(e, 'response'):
+                error_message += f"Response: {e.response}\n"
+            if hasattr(e, 'details'):
+                error_message += f"Details: {e.details}\n"
+            last_error_message = error_message
+            if attempt >= 5:
+                if last_error_message:
+                    print(last_error_message)
+                raise RuntimeError(last_error_message or error_message) from e
+
+        if attempt < 5:
+            delay = 2.0
+            time.sleep(delay)
+
+    return None
  
 def process_images(images_dir, output_dir, prompt_text, start_idx=None, end_idx=None, batch_size=3):
     """
@@ -299,8 +307,12 @@ def process_images(images_dir, output_dir, prompt_text, start_idx=None, end_idx=
     )
 
     total = len(image_files)
+    fail_count = 0
+    from threading import Lock
+    fail_lock = Lock()
 
     def _process_one(image_path, idx):
+        nonlocal fail_count
         text = extract_text_from_gemini_api(image_path, idx, prompt_text)
         base_name = os.path.splitext(os.path.basename(image_path))[0]
         if text == "__PROHIBITED_CONTENT__":
@@ -309,7 +321,10 @@ def process_images(images_dir, output_dir, prompt_text, start_idx=None, end_idx=
                 with open(out_path, 'w', encoding='utf-8') as md_file:
                     md_file.write("")
             except Exception as e:
-                print(f"\nError writing to file {out_path}: {e}")
+                # Suppress write errors during processing
+                pass
+            with fail_lock:
+                fail_count += 1
             return
         if text is None:
             raise RuntimeError(f"No content after 5 attempts on page {idx}. Please intervene.")
@@ -318,17 +333,15 @@ def process_images(images_dir, output_dir, prompt_text, start_idx=None, end_idx=
             with open(out_path, 'w', encoding='utf-8') as md_file:
                 md_file.write(text)
         except Exception as e:
-            print(f"\nError writing to file {out_path}: {e}")
+            # Suppress write errors during processing
+            pass
 
     completed = 0
     batch_size = max(1, int(batch_size))
     items = list(enumerate(image_files, start=1))
+    update_progress(0, total)
     for i in range(0, total, batch_size):
         batch = items[i:i + batch_size]
-        print(f"\n{'='*50}")
-        print(f"Processing images {batch[0][0]}-{batch[-1][0]} of {total}")
-        print(f"{'='*50}")
-
         with ThreadPoolExecutor(max_workers=batch_size) as executor:
             futures = [executor.submit(_process_one, image_path, idx) for idx, image_path in batch]
             for future in as_completed(futures):
@@ -338,7 +351,10 @@ def process_images(images_dir, output_dir, prompt_text, start_idx=None, end_idx=
                     print(f"\n{e}")
                     sys.exit(1)
                 completed += 1
-                update_progress(completed / total)
+                update_progress(completed, total)
+
+    if fail_count:
+        print(f"Fail pages: {fail_count}")
 
 
 def process_single_image(image_path, output_dir, output_file, prompt_text):
@@ -366,7 +382,8 @@ def process_single_image(image_path, output_dir, output_file, prompt_text):
             with open(fail_path, "w", encoding="utf-8") as md_file:
                 md_file.write("")
         except Exception as e:
-            print(f"\nError writing to file {fail_path}: {e}")
+            # Suppress write errors during processing
+            pass
         return
     if text is None:
         print("No content after 5 attempts. Please intervene.")
@@ -375,7 +392,8 @@ def process_single_image(image_path, output_dir, output_file, prompt_text):
         with open(out_path, "w", encoding="utf-8") as md_file:
             md_file.write(text)
     except Exception as e:
-        print(f"\nError writing to file {out_path}: {e}")
+        # Suppress write errors during processing
+        pass
  
 def main():
     """
@@ -514,10 +532,24 @@ def main():
     if input_file:
         start_idx = None
         end_idx = None
+    auto_range = False
+    auto_start_from = None
+    auto_end_from = None
+    if input_file:
+        start_idx = None
+        end_idx = None
     elif start_idx is None and end_idx is None:
+        auto_range = True
         max_idx = find_max_index(output_dir)
         start_idx = max_idx + 1
-        end_idx = start_idx + 49
+        auto_start_from = max_idx
+        images_max_idx = find_max_image_index(images_dir)
+        if images_max_idx >= start_idx:
+            end_idx = images_max_idx
+            auto_end_from = images_max_idx
+        else:
+            end_idx = start_idx + 49
+            auto_end_from = end_idx
 
     prompt_text = _load_prompt(prompt_path)
 
@@ -525,6 +557,9 @@ def main():
     print(f"Input file: {input_file or '(none)'}")
     print(f"Output directory: {output_dir}")
     print(f"Output file: {output_file or '(auto)'}")
+    if auto_range:
+        print(f"Auto start from (last continuous output index): {auto_start_from}")
+        print(f"Auto end from (max image index or fallback): {auto_end_from}")
     print(f"Image index range: {start_idx}-{end_idx}")
     print(f"Prompt file: {prompt_path}")
     print(f"Batch size: {args.batch_size}")

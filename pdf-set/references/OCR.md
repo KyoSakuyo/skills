@@ -1,6 +1,7 @@
-CRITICAL: 一旦命令开始执行，你就不能停止，等待命令执行完毕再提醒用户。禁止重复执行任务！
-- 若用户未指定 开始和中止页码，你应该读取 `<书籍目录>/ocr-result` 中已存在的最大页码，和`<书籍目录>/images` 中的最大页码，把前者加一作为起始页码，后者作为结束页码，自动续处理剩余图片。`--batch-size` 默认为3，不要动，不要从.fail.md.开始计数。
-- 你在列plan时不要把任务分很多条命令的小任务，如果你读取到的start参数是0, end参数是451, 那么你就列一条命令，像是`python .agent/skills/pdf-set/scripts/ocr.py --base-dir "C:\path\to" --book-name "某书" --start 0 --end 451`就可以了。不可以用`--start 0 --end 50`、`--start 51 --end 100`……`--start 400 --end 451`这样的多份小任务分批处理。
+CRITICAL: 
+- 一旦命令开始执行，进度条显示[RUNNING]，你就不应重复执行任务或者擅自中断任务──直至命令执行完毕，显示[OVER]再做出反应。
+- 若用户未指定开始和中止页码，你不应该擅自指定 --start; --end;和--batch 参数，应该让脚本自动判断页数。
+- 若用户指定了开始和中止页码──你在列plan时不要把任务分很多条命令的小任务，如果你读取到的start参数是0, end参数是451, 那么你就列一条命令，像是`python .agent/skills/pdf-set/scripts/ocr.py --base-dir "C:\path\to" --book-name "某书" --start 0 --end 451`就可以了。不可以用`--start 0 --end 50`、`--start 51 --end 100`……`--start 400 --end 451`这样的多份小任务分批处理。
 
 ## 输入/输出
 - 输入：`images/` 中的图片文件（支持 jpg/jpeg/png/bmp/tif/tiff/webp），按文件名前序号排序。
