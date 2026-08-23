@@ -1,2 +1,4 @@
-pdf-set/assets/secrets_openai.txt
+pdf-set/assets/secrets_openai.txt*
+**/__pycache__/
+*.py[cod]
 .agents/

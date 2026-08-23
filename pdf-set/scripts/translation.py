@@ -158,16 +158,32 @@ def _read_file(path):
         return f.read()
 
 
+def _format_decode_error(path, err):
+    return (
+        f"{path} 不是合法 UTF-8：byte {err.start}-{err.end}，"
+        f"{err.reason}。请移走或删除这个半成品输出文件后续翻。"
+    )
+
+
 def _append_file(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    prefix_newline = ""
+    existing = b""
     if os.path.isfile(path) and os.path.getsize(path) > 0:
         with open(path, "rb") as rf:
-            rf.seek(-1, os.SEEK_END)
-            if rf.read(1) not in (b"\n", b"\r"):
-                prefix_newline = "\n"
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(prefix_newline + text.rstrip() + "\n")
+            existing = rf.read()
+
+    prefix_newline = b""
+    if existing and existing[-1:] not in (b"\n", b"\r"):
+        prefix_newline = b"\n"
+
+    addition = prefix_newline + (text.rstrip() + "\n").encode("utf-8")
+    tmp_path = f"{path}.tmp-{os.getpid()}"
+    with open(tmp_path, "wb") as f:
+        f.write(existing)
+        f.write(addition)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, path)
 
 
 def _rollback_file_to_size(path, size_before_append):
@@ -354,14 +370,14 @@ def _find_heading_tag_mismatch_reasons(expected_paragraphs, output_text):
     return reasons
 
 
-def _format_progress_line(prefix, completed, total, width=40):
+def _format_progress_line(prefix, completed, total, width=40, status=None):
     total = max(total, 1)
     completed = min(max(completed, 0), total)
     ratio = completed / total
     filled = int(round(width * ratio))
     bar = "#" * filled + "-" * (width - filled)
     pct = ratio * 100
-    status = "OVER" if completed >= total else "RUNNING"
+    status = status or ("OVER" if completed >= total else "RUNNING")
     return f"{prefix} [{completed}/{total}] [{bar}] [{pct:6.2f}%] [{status}]"
 
 
@@ -384,7 +400,14 @@ class DoubleProgress:
         sys.stdout.flush()
 
     def update(self, file_completed, file_total, para_completed, para_total):
-        self.file_line = _format_progress_line("Files", file_completed, file_total)
+        file_status = (
+            "OVER"
+            if file_completed >= file_total and para_completed >= para_total
+            else "RUNNING"
+        )
+        self.file_line = _format_progress_line(
+            "Files", file_completed, file_total, status=file_status
+        )
         self.para_line = _format_progress_line("Paras", para_completed, para_total)
         self._render()
 
@@ -430,6 +453,11 @@ if not OPENAI_BASE_URL or not OPENAI_API_KEY or not OPENAI_MODEL:
     sys.exit(1)
 MODEL = OPENAI_MODEL
 openai_client = None
+FAST_MODE = False
+
+
+def _request_kwargs():
+    return {"service_tier": "fast"} if FAST_MODE else {}
 
 
 class EmptyResponseError(RuntimeError):
@@ -593,6 +621,7 @@ def _request_text_once(model_name, request_text):
     response = openai_client.chat.completions.create(
         model=model_name or OPENAI_MODEL,
         messages=[{"role": "user", "content": request_text}],
+        **_request_kwargs(),
     )
     finish_reason = ""
     try:
@@ -624,6 +653,7 @@ def _request_text_once_openai(request_text):
     response = openai_client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[{"role": "user", "content": request_text}],
+        **_request_kwargs(),
     )
     finish_reason = ""
     try:
@@ -766,7 +796,11 @@ def _calc_resume_state(input_dir, output_dir):
     out_path = os.path.join(output_dir, f"{max_idx}.md")
     if os.path.isfile(in_path) and os.path.isfile(out_path):
         in_total = len(_split_paragraphs(_read_file(in_path)))
-        out_done = _count_translated_paragraphs(_read_file(out_path))
+        try:
+            out_text = _read_file(out_path)
+        except UnicodeDecodeError as err:
+            raise RuntimeError(_format_decode_error(out_path, err)) from err
+        out_done = _count_translated_paragraphs(out_text)
         if out_done < in_total:
             return max_idx, out_done, (max_idx, out_done, in_total, False)
         return max_idx + 1, 0, (max_idx, out_done, in_total, True)
@@ -818,6 +852,7 @@ def process_translation_files(input_dir, output_dir, prompt_text, chunk_size, st
     else:
         resume_idx, resume_para = start_idx, 0
 
+    numeric_file_nums = []
     selected = []
     for path in files:
         stem = os.path.splitext(os.path.basename(path))[0]
@@ -828,6 +863,7 @@ def process_translation_files(input_dir, output_dir, prompt_text, chunk_size, st
             continue
         if end_idx is not None and num > end_idx:
             continue
+        numeric_file_nums.append(num)
         if resume_idx is not None and num < resume_idx:
             continue
         selected.append((num, path))
@@ -839,24 +875,26 @@ def process_translation_files(input_dir, output_dir, prompt_text, chunk_size, st
     _preview_target_file(selected[0][1])
 
     progress = DoubleProgress()
-    total_files = len(selected)
-    finished_files = 0
+    full_file_total = max(numeric_file_nums) if numeric_file_nums else selected[-1][0]
 
     for file_idx, (num, in_path) in enumerate(selected, start=1):
         out_path = os.path.join(output_dir, f"{num}.md")
         input_paras = _split_paragraphs(_read_file(in_path))
         total_paras = len(input_paras)
         if total_paras == 0:
-            finished_files += 1
-            progress.update(finished_files, total_files, 0, 1)
+            progress.update(num, full_file_total, 0, 1)
             continue
 
-        existing_done = _count_translated_paragraphs(_read_file(out_path))
+        try:
+            existing_output_text = _read_file(out_path)
+        except UnicodeDecodeError as err:
+            raise RuntimeError(_format_decode_error(out_path, err)) from err
+        existing_done = _count_translated_paragraphs(existing_output_text)
         start_para = existing_done
         if resume_idx is not None and num == resume_idx:
             start_para = max(start_para, resume_para)
 
-        progress.update(finished_files, total_files, start_para, total_paras)
+        progress.update(num, full_file_total, start_para, total_paras)
 
         while start_para < total_paras:
             retry_idx = 0
@@ -953,11 +991,27 @@ def process_translation_files(input_dir, output_dir, prompt_text, chunk_size, st
 
                 _append_file(out_path, result)
 
-                new_done = _count_translated_paragraphs(_read_file(out_path))
+                try:
+                    output_text_after_append = _read_file(out_path)
+                except UnicodeDecodeError as err:
+                    _rollback_file_to_size(out_path, size_before)
+                    last_failed_output = result
+                    last_failure_reasons = [
+                        "输出文件写入后不是合法 UTF-8，已回滚并重试："
+                        + _format_decode_error(out_path, err)
+                    ]
+                    print(
+                        "\n输出文件 UTF-8 校验失败，已撤回重试："
+                        + _format_decode_error(out_path, err)
+                    )
+                    retry_idx += 1
+                    continue
+
+                new_done = _count_translated_paragraphs(output_text_after_append)
                 actual_inc = new_done - done_before
                 if actual_inc == expected_inc:
                     start_para = new_done
-                    progress.update(finished_files, total_files, start_para, total_paras)
+                    progress.update(num, full_file_total, start_para, total_paras)
                     break
 
                 _rollback_file_to_size(out_path, size_before)
@@ -971,12 +1025,15 @@ def process_translation_files(input_dir, output_dir, prompt_text, chunk_size, st
                 )
                 retry_idx += 1
 
-        final_done = _count_translated_paragraphs(_read_file(out_path))
+        try:
+            final_output_text = _read_file(out_path)
+        except UnicodeDecodeError as err:
+            raise RuntimeError(_format_decode_error(out_path, err)) from err
+        final_done = _count_translated_paragraphs(final_output_text)
         if final_done < total_paras:
             raise RuntimeError(f"文件 {num}.md 段落数未对齐：输出 {final_done} < 输入 {total_paras}")
 
-        finished_files += 1
-        progress.update(finished_files, total_files, total_paras, total_paras)
+        progress.update(num, full_file_total, total_paras, total_paras)
 
     print("\n全部任务完成。")
 
@@ -1021,6 +1078,8 @@ def process_translation_file(input_file, output_file, prompt_text, chunk_size):
 
 
 def main():
+    global FAST_MODE
+
     print("\n********************************")
     print("*** Markdown Translation Tool ***")
     print("********************************\n")
@@ -1109,7 +1168,13 @@ def main():
         default=None,
         help="UTF-8 text file containing prompt file path (first non-empty line).",
     )
+    parser.add_argument(
+        "--fast",
+        action="store_true",
+        help='Use the Fast service tier (service_tier="fast").',
+    )
     args = parser.parse_args()
+    FAST_MODE = args.fast
 
     base_dir = args.base_dir
     if args.base_dir_from:
@@ -1179,4 +1244,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except RuntimeError as err:
+        print(f"\n错误：{err}")
+        sys.exit(1)
